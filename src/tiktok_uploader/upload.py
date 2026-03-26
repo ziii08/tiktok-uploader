@@ -422,58 +422,47 @@ def _set_description(page: Page, description: str) -> None:
         desc_locator.click()
         time.sleep(1)
 
-        words = description.split(" ")
-        for word in words:
-            if word[0] == "#":
-                desc_locator.press_sequentially(word, delay=50)
-                time.sleep(0.5)
+        # ================= LOGIKA PEMISAHAN BARU =================
+        # Pecah kata menggunakan .split() kosong agar Enter (\n) ikut terpotong
+        all_words = description.split()
 
-                mention_box = page.locator(
-                    f"xpath={config.selectors.upload.mention_box}"
-                )
-                try:
-                    mention_box.wait_for(
-                        state="visible", timeout=config.add_hashtag_wait * 1000
-                    )
-                    desc_locator.press("Enter")
-                except Exception:
-                    pass
+        tags = [w for w in all_words if w.startswith("#") or w.startswith("@")]
 
-            elif word[0] == "@":
-                logger.debug(green("- Adding Mention: " + word))
-                desc_locator.press_sequentially(word)
-                time.sleep(1)
+        main_text = description
+        for t in tags:
+            main_text = main_text.replace(t, "")
 
-                mention_box_user_id = page.locator(
-                    f"xpath={config.selectors.upload.mention_box_user_id}"
-                )
-                try:
-                    mention_box_user_id.first.wait_for(state="visible", timeout=5000)
+        page.keyboard.insert_text(main_text.strip() + "\n\n")
+        time.sleep(1)
 
-                    found = False
-                    user_ids = mention_box_user_id.all()
+        for tag in tags:
+            page.keyboard.type(tag, delay=100) 
+            time.sleep(2) # Tunggu server TikTok ngasih dropdown
+            page.keyboard.press("Enter") # Kunci jadi biru
+            page.keyboard.press("Space") # Kasih jarak
+            time.sleep(0.5)
+        
+        time.sleep(1)
 
-                    target_username = word[1:].lower()
-
-                    for i, user_el in enumerate(user_ids):
-                        if user_el.is_visible():
-                            text = user_el.inner_text().split(" ")[0]
-                            if text.lower() == target_username:
-                                found = True
-                                print("Matching User found : Clicking User")
-                                for _ in range(i):
-                                    desc_locator.press("ArrowDown")
-                                desc_locator.press("Enter")
-                                break
-
-                    if not found:
-                        desc_locator.press_sequentially(" ")
-
-                except Exception:
-                    desc_locator.press_sequentially(" ")
-
-            else:
-                desc_locator.press_sequentially(word + " ")
+        # words = description.split(" ")
+        # for word in words:
+        #     if word.startswith("#") or word.startswith("@"):
+        #         # 1. Ketik hurufnya pelan-pelan biar sistem TikTok sadar
+        #         page.keyboard.type(word, delay=100) 
+                
+        #         # 2. ⏳ KUNCI UTAMA: Tunggu 2 detik! 
+        #         # Beri waktu server TikTok buat nampilin dropdown sugesti
+        #         time.sleep(2) 
+                
+        #         # 3. Kunci pakai Enter
+        #         page.keyboard.press("Enter") 
+                
+        #         # 4. Beri jeda sebentar sebelum tekan spasi
+        #         time.sleep(0.5)
+        #         page.keyboard.press("Space") 
+        #         time.sleep(0.5)
+        #     else:
+        #         desc_locator.press_sequentially(word + " ")
 
     except Exception as exception:
         print("Failed to set description: ", exception)
@@ -686,7 +675,8 @@ def __date_picker(page: Page, month: int, day: int) -> None:
 def __verify_date_picked_is_correct(page: Page, month: int, day: int) -> None:
     date_selected = page.locator(
         f"xpath={config.selectors.schedule.date_picker}"
-    ).inner_text()
+    ).get_attribute("value") # 🟢 UBAH BAGIAN INI SAJA
+    
     date_selected_month = int(date_selected.split("-")[1])
     date_selected_day = int(date_selected.split("-")[2])
 
@@ -714,9 +704,11 @@ def __time_picker(page: Page, hour: int, minute: int) -> None:
         f"xpath={config.selectors.schedule.timepicker_minutes}"
     )
 
-    hour_to_click = hour_options.nth(hour)
-    minute_option_correct_index = int(minute / 5)
-    minute_to_click = minute_options.nth(minute_option_correct_index)
+    # hour_to_click = hour_options.nth(hour)
+    # minute_option_correct_index = int(minute / 5)
+    # minute_to_click = minute_options.nth(minute_option_correct_index)
+    hour_to_click = page.locator(f"xpath={config.selectors.schedule.timepicker_hours}[text()='{hour:02d}']")
+    minute_to_click = page.locator(f"xpath={config.selectors.schedule.timepicker_minutes}[text()='{minute:02d}']")
 
     hour_to_click.scroll_into_view_if_needed()
     time.sleep(0.5)
@@ -734,8 +726,9 @@ def __time_picker(page: Page, hour: int, minute: int) -> None:
 
 def __verify_time_picked_is_correct(page: Page, hour: int, minute: int) -> None:
     time_selected = page.locator(
-        f"xpath={config.selectors.schedule.time_picker_text}"
-    ).inner_text()
+        f"xpath={config.selectors.schedule.time_picker}" # 🟢 HAPUS '_text' di belakangnya
+    ).get_attribute("value") # 🟢 UBAH JADI get_attribute("value")
+    
     time_selected_hour = int(time_selected.split(":")[0])
     time_selected_minute = int(time_selected.split(":")[1])
 
