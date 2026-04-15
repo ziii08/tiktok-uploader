@@ -363,12 +363,12 @@ def complete_upload_form(
 
     _set_video(page, path=path, num_retries=num_retries, **kwargs)
 
-    if cover_path:
-        _set_cover(page, cover_path)
     if not skip_split_window:
         _remove_split_window(page)
     _set_interactivity(page, **kwargs)
     _set_description(page, description)
+    if cover_path:
+        _set_cover(page, cover_path)
     if visibility != "everyone":
         _set_visibility(page, visibility)
     if schedule:
