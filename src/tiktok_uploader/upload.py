@@ -834,13 +834,68 @@ def _add_product_link(page: Page, product_id: str) -> None:
 
 def _set_cover(page: Page, cover_path: str) -> None:
     """
-    Adds a custom cover
+    Adds a custom cover using the NEW TikTok UI (Modal) with graceful fallback to OLD UI
     """
     logger.debug(green(f"Attempting to add custom cover: {cover_path}..."))
     try:
-        if not _check_valid_cover_path(cover_path):
+        from os.path import exists
+        if not exists(cover_path):
             raise Exception("Invalid cover image file path")
 
+        # ------------------- NEW TIKTOK UI FLOW -------------------
+        try:
+            popup_handled = False
+            # Check for possible "New editing features" onboarding popup
+            got_it_btn = page.locator("button:has-text('Got it')").last
+            if got_it_btn.is_visible(timeout=3000):
+                got_it_btn.click()
+                time.sleep(1)
+                popup_handled = True
+
+            # 1. Click "Edit cover" on the thumbnail
+            new_edit_cover_btn = page.locator("div:has-text('Edit cover')").last
+            if not popup_handled and not new_edit_cover_btn.is_visible(timeout=2000):
+                raise Exception("New UI 'Edit cover' button not visible")
+            
+            new_edit_cover_btn.wait_for(state="visible", timeout=5000)
+            new_edit_cover_btn.click()
+            time.sleep(1.5)
+
+            # 2. Wait for modal (Upload cover image label)
+            upload_label = page.locator("label[aria-label='Upload cover image']").last
+            upload_label.wait_for(state="visible", timeout=6000)
+
+            # 3. Find file input & upload
+            # Looks for standard image accept pattern
+            file_input = page.locator("input[type='file'][accept*='image']").last
+            file_input.set_input_files(cover_path)
+            time.sleep(2.5)  # Wait for upload & preview to reflect
+
+            # 4. Click Save
+            # Use exact match to prevent matching "Save draft" button which never hides
+            save_btn = page.locator("xpath=//button[.//div[text()='Save']] | //button[text()='Save']").first
+            # Give it 2 seconds to appear just in case
+            save_btn.wait_for(state="visible", timeout=2000)
+            save_btn.click()
+
+            # 5. Wait for modal to close
+            save_btn.wait_for(state="hidden", timeout=12000)
+            time.sleep(1.5)
+            logger.debug(green(f"Successfully set cover (New UI)"))
+            return  # Success, exit function
+
+        except Exception as e_new:
+            logger.debug(f"New UI cover flow failed, fallback to Old UI. Reason: {str(e_new)}")
+            try:
+                # Attempt to close the modal if stuck
+                cancel_btn = page.locator("xpath=//button[.//div[text()='Cancel']] | //button[text()='Cancel']").first
+                if cancel_btn.is_visible(timeout=1000):
+                    cancel_btn.click()
+                    time.sleep(1)
+            except Exception:
+                pass
+
+        # ------------------- OLD TIKTOK UI FLOW -------------------
         preview_loc = page.locator(
             f"xpath={config.selectors.upload.cover.cover_preview}"
         )
@@ -871,6 +926,8 @@ def _set_cover(page: Page, cover_path: str) -> None:
             if check_src_change():
                 break
             time.sleep(0.5)
+        
+        logger.debug(green(f"Successfully set cover (Old UI)"))
 
     except Exception as e:
         logger.error(red(f"Error setting cover: {e}"))
