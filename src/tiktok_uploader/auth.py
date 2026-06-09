@@ -103,7 +103,7 @@ class AuthBackend:
             #     c["domain"] = c["domain"][1:]
 
             # logger.debug(f"Adding cookie: {c}")
-            print(f"DEBUG: Adding cookie: {c}")
+            # print(f"DEBUG: Adding cookie: {c}")
             playwright_cookies.append(c)
 
         try:
