@@ -527,17 +527,22 @@ def _remove_cookies_window(page: Page) -> None:
 
 def _remove_split_window(page: Page) -> None:
     """
-    Remove the split window if it is open
+    Remove the split window and any walkthrough modals if they are open
     """
-    logger.debug(green("Removing split window"))
-    window_xpath = config.selectors.upload.split_window
-
+    logger.debug(green("Removing walkthrough modals"))
     try:
-        window = page.locator(f"xpath={window_xpath}")
-        if window.is_visible(timeout=config.implicit_wait * 1000):
-            window.click()
-    except PlaywrightTimeoutError:
-        logger.debug(red("Split window not found or operation timed out"))
+        # Loop to catch multiple walkthroughs (e.g. "Editing features" and "Mobile Preview")
+        for _ in range(3):
+            page.evaluate('''
+                document.querySelectorAll('button').forEach(b => {
+                    if(b.innerText && (b.innerText.includes('Got it') || b.innerText.includes('Okay'))) {
+                        b.click();
+                    }
+                });
+            ''')
+            time.sleep(1)
+    except Exception as e:
+        logger.debug(red(f"Error removing walkthrough modals: {e}"))
 
 
 def _set_interactivity(
@@ -749,14 +754,21 @@ def _post_video(page: Page) -> None:
     """
     logger.debug(green("Clicking the post button"))
 
+    # Ensure any remaining walkthrough overlays are dismissed
+    try:
+        page.evaluate('''
+            document.querySelectorAll('button').forEach(b => {
+                if(b.innerText && b.innerText.includes('Got it')) b.click();
+            });
+        ''')
+        time.sleep(1)
+    except:
+        pass
+
     post_btn = page.locator(f"xpath={config.selectors.upload.post}")
     try:
-
-        def is_enabled():
-            return post_btn.get_attribute("data-disabled") == "false"
-
         for _ in range(int(config.uploading_wait / 2)):
-            if is_enabled():
+            if post_btn.is_enabled():
                 break
             time.sleep(2)
 
@@ -767,6 +779,31 @@ def _post_video(page: Page) -> None:
         logger.debug(green("Trying to click on the button again (fallback)"))
         page.evaluate('document.querySelector(".TUXButton--primary").click()')
 
+    time.sleep(3)
+
+    # Handle "Content may be restricted" warning modal
+    try:
+        if page.locator("text=Content may be restricted").is_visible(timeout=3000) or page.locator("text=restricted").is_visible(timeout=1000):
+            logger.debug(green("Warning modal detected, closing it to bypass..."))
+            # Press Escape to close modal
+            page.keyboard.press("Escape")
+            time.sleep(1)
+            
+            # Fallback close button click
+            page.evaluate('''
+                document.querySelectorAll('div[role="dialog"] button').forEach(b => {
+                    if(!b.innerText || b.innerText.trim() === '') b.click(); 
+                });
+            ''')
+            time.sleep(2)
+            
+            # Click POST again (second click required by TikTok)
+            logger.debug(green("Clicking Post button again after closing warning..."))
+            post_btn.click()
+            time.sleep(3)
+    except Exception:
+        pass
+
     try:
         post_now = page.locator(f"xpath={config.selectors.upload.post_now}")
         if post_now.is_visible(timeout=5000):
@@ -774,10 +811,16 @@ def _post_video(page: Page) -> None:
     except Exception:
         pass
 
-    post_confirmation = page.locator(
-        f"xpath={config.selectors.upload.post_confirmation}"
-    )
-    post_confirmation.wait_for(state="attached", timeout=config.explicit_wait * 1000)
+    # Wait for the successful post redirection or confirmation
+    try:
+        post_confirmation = page.locator(f"xpath={config.selectors.upload.post_confirmation}")
+        post_confirmation.wait_for(state="attached", timeout=config.explicit_wait * 1000)
+    except Exception:
+        # Fallback check: if we are redirected to /tiktokstudio/content, upload was successful
+        if "content" in page.url or "tiktokstudio/content" in page.url:
+            logger.debug(green("Redirected to content page, assuming success."))
+        else:
+            raise
 
     logger.debug(green("Video posted successfully"))
 
