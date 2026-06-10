@@ -214,8 +214,12 @@ class TikTokUploader:
                 logger.error("Failed to upload %s", path)
                 logger.error(exception)
                 failed.append(video)
-                # import traceback
-                # traceback.print_exc()
+                try:
+                    page.screenshot(path="tiktok_error_screenshot.png")
+                except:
+                    pass
+                import traceback
+                traceback.print_exc()
 
             if on_complete and callable(
                 on_complete
@@ -384,12 +388,16 @@ def _go_to_upload(page: Page) -> None:
     """
     logger.debug(green("Navigating to upload page"))
 
-    if page.url != config.paths.upload:
-        page.goto(str(config.paths.upload))
-    else:
-        # refresh
-        page.reload()
-        # TODO: handle alert if any (Playwright auto-dismisses dialogs usually, or we can handle)
+    try:
+        if page.url != config.paths.upload:
+            page.goto(str(config.paths.upload), timeout=60000, wait_until="domcontentloaded")
+        else:
+            # refresh
+            page.reload(timeout=60000, wait_until="domcontentloaded")
+    except Exception as e:
+        logger.debug(red(f"Page load timeout or error (continuing anyway): {e}"))
+        
+    # TODO: handle alert if any (Playwright auto-dismisses dialogs usually, or we can handle)
         page.on("dialog", lambda dialog: dialog.accept())
 
     # waits for the root to load
@@ -563,17 +571,21 @@ def _set_interactivity(
         stitch_box = page.locator(f"xpath={config.selectors.upload.stitch}")
         duet_box = page.locator(f"xpath={config.selectors.upload.duet}")
 
-        if comment ^ comment_box.is_checked():
-            comment_box.click()
+        # Use a short timeout of 2 seconds so we don't wait 30 seconds if TikTok removed these
+        if comment_box.is_visible(timeout=2000):
+            if comment ^ comment_box.is_checked():
+                comment_box.click()
 
-        if stitch ^ stitch_box.is_checked():
-            stitch_box.click()
+        if stitch_box.is_visible(timeout=2000):
+            if stitch ^ stitch_box.is_checked():
+                stitch_box.click()
 
-        if duet ^ duet_box.is_checked():
-            duet_box.click()
+        if duet_box.is_visible(timeout=2000):
+            if duet ^ duet_box.is_checked():
+                duet_box.click()
 
     except Exception as _:
-        logger.error("Failed to set interactivity settings")
+        logger.debug(red("Skipping interactivity settings (TikTok UI likely changed)"))
 
 
 def _set_visibility(
@@ -941,28 +953,43 @@ def _set_cover(page: Page, cover_path: str) -> None:
         # ------------------- OLD TIKTOK UI FLOW -------------------
         preview_loc = page.locator(
             f"xpath={config.selectors.upload.cover.cover_preview}"
-        )
-        current_cover_src = preview_loc.get_attribute("src")
+        ).first
+        current_cover_src = preview_loc.get_attribute("src") if preview_loc.is_visible() else ""
 
-        edit_cover_btn = page.locator(
-            f"xpath={config.selectors.upload.cover.edit_cover_button}"
-        )
-        edit_cover_btn.click()
+        upload_tab = page.locator("text=Upload cover").last
+        
+        # Only click Edit Cover if the modal is not already open
+        if not upload_tab.is_visible(timeout=2000):
+            edit_cover_btn = page.locator(
+                f"xpath={config.selectors.upload.cover.edit_cover_button}"
+            ).first
+            if edit_cover_btn.is_visible(timeout=2000):
+                try:
+                    edit_cover_btn.click(force=True)
+                except Exception:
+                    pass
+                time.sleep(1)
 
-        upload_tab = page.locator(
-            f"xpath={config.selectors.upload.cover.upload_cover_tab}"
-        )
-        upload_tab.click()
+        # 1. Click 'Upload cover' tab
+        upload_tab = page.locator("text=Upload cover").last
+        if upload_tab.is_visible(timeout=3000):
+            upload_tab.click()
+            time.sleep(1)
 
-        upload_box = page.locator(f"xpath={config.selectors.upload.cover.upload_cover}")
+        # 2. Upload file
+        upload_box = page.locator("input[type='file'][accept*='image']").last
         upload_box.set_input_files(cover_path)
+        time.sleep(2)
 
-        confirm_btn = page.locator(
-            f"xpath={config.selectors.upload.cover.upload_confirmation}"
-        )
-        confirm_btn.click()
+        # 3. Click Confirm
+        confirm_btn = page.locator("button:has-text('Confirm')").last
+        if confirm_btn.is_visible(timeout=3000):
+            confirm_btn.click()
+            time.sleep(2)
 
         def check_src_change():
+            if not preview_loc.is_visible():
+                return True
             return preview_loc.get_attribute("src") != current_cover_src
 
         for _ in range(20):
