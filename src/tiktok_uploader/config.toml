@@ -21,9 +21,9 @@ supported_image_file_types = ["png", "jpg", "jpeg"]
 max_description_length = 150 # characters
 
 [paths]
-main = "https://www.tiktok.com/"
+main = "https://www.tiktok.com/tiktokstudio/upload?from=upload&lang=en"
 login = "https://www.tiktok.com/login/phone-or-email/email"
-upload = "https://www.tiktok.com/creator-center/upload?lang=en"
+upload = "https://www.tiktok.com/tiktokstudio/upload?from=upload&lang=en"
 
 [disguising]
 user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
@@ -61,19 +61,19 @@ user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 
 	post = "//button[@data-e2e='post_video_button']"
 	post_now = "//button[.//div[text()='Post now']]"
-	post_confirmation = "//div[contains(text(), 'Your video has been uploaded') or contains(text(), '视频已发布') or contains(text(), 'Video published')]"
+	post_confirmation = "//button[contains(., 'Manage your posts') or contains(., 'Upload another video')] | //div[@role='dialog'][contains(., 'Your video has been scheduled') or contains(., 'Your video has been uploaded')] | //*[contains(text(), 'Your video has been scheduled') or contains(text(), 'Your video has been uploaded') or contains(text(), 'Video scheduled') or contains(text(), 'Video published') or contains(text(), '视频已发布')]"
 
 
 	[selectors.schedule]
-	switch = "//span[text()='Schedule']"
+	switch = "//*[@data-e2e='schedule_container']//label[normalize-space(.)='Schedule'] | //span[text()='Schedule']"
 
-	date_picker = "//input[contains(@class, 'TUXTextInputCore-input') and contains(@value, '-')]"
+	date_picker = "//input[@type='date' or contains(@value, '-') or contains(@placeholder, 'date') or contains(@placeholder, 'Date') or contains(@class, 'TUXTextInputCore-input')]"
 	calendar = "//div[contains(@class, 'calendar-wrapper')]"
 	calendar_month = "//span[contains(@class, 'month-title')]"
 	calendar_valid_days = "//div[contains(@class, 'days-wrapper')]//span[contains(@class, 'day') and contains(@class, 'valid')]"
 	calendar_arrows = "//span[contains(@class, 'arrow')]"  # first last, second next
 
-	time_picker = "//input[contains(@class, 'TUXTextInputCore-input') and contains(@value, ':')]"
+	time_picker = "//input[@type='time' or contains(@value, ':') or contains(@placeholder, 'time') or contains(@placeholder, 'Time') or contains(@class, 'TUXTextInputCore-input')]"
 	time_picker_text = "//div[contains(@class, 'time-picker-input')]/*[1]"
 	time_picker_container = "//div[@class='tiktok-timepicker-time-picker-container']"
 	timepicker_hours = "//span[contains(@class, 'tiktok-timepicker-left')]"

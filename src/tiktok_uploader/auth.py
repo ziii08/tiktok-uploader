@@ -111,11 +111,14 @@ class AuthBackend:
                 try:
                     page.context.add_cookies([cast(Any, pc)])
                 except Exception as e:
-                    print(f"DEBUG: Failed to add individual cookie {pc['name']}: {e}")
+                    logger.debug(f"Failed to add individual cookie {pc.get('name')}: {e}")
         except Exception as e:
             logger.error(f"Failed to add cookies: {e}")
 
-        page.goto(str(config.paths.main))
+        try:
+            page.goto(str(config.paths.main), wait_until="domcontentloaded", timeout=60000)
+        except Exception as e:
+            logger.debug(f"Warning during auth navigation: {e}")
 
         # Check if we are redirected to a login or explore page
         current_url = page.url

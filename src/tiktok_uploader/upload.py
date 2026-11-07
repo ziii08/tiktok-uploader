@@ -404,6 +404,31 @@ def _go_to_upload(page: Page) -> None:
     page.wait_for_selector("#root", timeout=config.explicit_wait * 1000)
 
 
+def _dismiss_walkthrough_overlays(page: Page) -> None:
+    """
+    Proactively dismisses joyride tour overlays, floating modals, and banners.
+    """
+    try:
+        page.evaluate(
+            """
+            () => {
+                const overlays = document.querySelectorAll(
+                    '#react-joyride-portal, .react-joyride__overlay, .react-joyride__tooltip, [data-test-id="overlay"], div[class*="modal-mask"]'
+                );
+                overlays.forEach(el => el.remove());
+                document.querySelectorAll('button').forEach(btn => {
+                    const txt = (btn.innerText || '').trim().toLowerCase();
+                    if (['got it', 'okay', 'dismiss', 'close', 'not now', 'mengerti'].includes(txt)) {
+                        try { btn.click(); } catch (_) {}
+                    }
+                });
+            }
+            """
+        )
+    except Exception:
+        pass
+
+
 def _set_description(page: Page, description: str) -> None:
     """
     Sets the description of the video
@@ -418,65 +443,73 @@ def _set_description(page: Page, description: str) -> None:
     saved_description = description
 
     try:
+        _dismiss_walkthrough_overlays(page)
+
         desc_locator = page.locator(f"xpath={config.selectors.upload.description}")
-        desc_locator.wait_for(state="visible", timeout=config.implicit_wait * 1000)
+        try:
+            desc_locator.first.wait_for(
+                state="attached",
+                timeout=config.implicit_wait * 1000,
+            )
+            desc_locator.first.scroll_into_view_if_needed(timeout=5000)
+        except Exception:
+            pass
 
-        desc_locator.click()
+        try:
+            desc_locator.first.focus()
+        except Exception:
+            pass
+        try:
+            desc_locator.first.click(force=True, timeout=5000)
+        except Exception:
+            pass
+        try:
+            desc_locator.first.press("Control+A")
+            desc_locator.first.press("Backspace")
+        except Exception:
+            pass
+        try:
+            desc_locator.first.click(force=True, timeout=3000)
+        except Exception:
+            pass
+        time.sleep(0.5)
 
-        # Clear existing text
-        desc_locator.press("Control+A")
-        desc_locator.press("Backspace")
-
-        desc_locator.click()
-        time.sleep(1)
-
-        # ================= LOGIKA PEMISAHAN BARU =================
-        # Pecah kata menggunakan .split() kosong agar Enter (\n) ikut terpotong
+        # Fast text insertion + auto-link up to 3 tags
         all_words = description.split()
-
         tags = [w for w in all_words if w.startswith("#") or w.startswith("@")]
 
         main_text = description
         for t in tags:
             main_text = main_text.replace(t, "")
 
-        page.keyboard.insert_text(main_text.strip() + "\n\n")
-        time.sleep(1)
-
-        for tag in tags:
-            page.keyboard.type(tag, delay=100) 
-            time.sleep(2) # Tunggu server TikTok ngasih dropdown
-            page.keyboard.press("Enter") # Kunci jadi biru
-            page.keyboard.press("Space") # Kasih jarak
-            time.sleep(0.5)
-        
-        time.sleep(1)
-
-        # words = description.split(" ")
-        # for word in words:
-        #     if word.startswith("#") or word.startswith("@"):
-        #         # 1. Ketik hurufnya pelan-pelan biar sistem TikTok sadar
-        #         page.keyboard.type(word, delay=100) 
-                
-        #         # 2. ⏳ KUNCI UTAMA: Tunggu 2 detik! 
-        #         # Beri waktu server TikTok buat nampilin dropdown sugesti
-        #         time.sleep(2) 
-                
-        #         # 3. Kunci pakai Enter
-        #         page.keyboard.press("Enter") 
-                
-        #         # 4. Beri jeda sebentar sebelum tekan spasi
-        #         time.sleep(0.5)
-        #         page.keyboard.press("Space") 
-        #         time.sleep(0.5)
-        #     else:
-        #         desc_locator.press_sequentially(word + " ")
+        page.keyboard.insert_text(main_text.strip())
+        if tags:
+            page.keyboard.insert_text("\n\n")
+            slow_tags = tags[:3]
+            fast_tags = tags[3:]
+            for tag in slow_tags:
+                page.keyboard.type(tag, delay=80)
+                time.sleep(1.2)
+                page.keyboard.press("Enter")
+                page.keyboard.press("Space")
+                time.sleep(0.3)
+            if fast_tags:
+                page.keyboard.insert_text(" ".join(fast_tags))
+        time.sleep(0.5)
 
     except Exception as exception:
-        print("Failed to set description: ", exception)
+        logger.warning(f"Failed to set description: {exception}")
         # fallback
-        _clear(desc_locator)
-        desc_locator.fill(saved_description)
+        try:
+            _dismiss_walkthrough_overlays(page)
+            desc_locator = page.locator(f"xpath={config.selectors.upload.description}").first
+            desc_locator.scroll_into_view_if_needed(timeout=3000)
+            desc_locator.click(force=True, timeout=3000)
+            desc_locator.press("Control+A")
+            desc_locator.press("Backspace")
+            page.keyboard.insert_text(saved_description)
+        except Exception:
+            pass
 
 
 def _clear(locator) -> None:
@@ -538,17 +571,19 @@ def _remove_split_window(page: Page) -> None:
     Remove the split window and any walkthrough modals if they are open
     """
     logger.debug(green("Removing walkthrough modals"))
+    _dismiss_walkthrough_overlays(page)
     try:
         # Loop to catch multiple walkthroughs (e.g. "Editing features" and "Mobile Preview")
         for _ in range(3):
             page.evaluate('''
                 document.querySelectorAll('button').forEach(b => {
-                    if(b.innerText && (b.innerText.includes('Got it') || b.innerText.includes('Okay'))) {
-                        b.click();
+                    const txt = (b.innerText || '').trim().toLowerCase();
+                    if(txt === 'got it' || txt === 'okay' || txt === 'dismiss' || txt === 'close') {
+                        try { b.click(); } catch (_) {}
                     }
                 });
             ''')
-            time.sleep(1)
+            time.sleep(0.5)
     except Exception as e:
         logger.debug(red(f"Error removing walkthrough modals: {e}"))
 
@@ -583,6 +618,22 @@ def _set_interactivity(
         if duet_box.is_visible(timeout=2000):
             if duet ^ duet_box.is_checked():
                 duet_box.click()
+
+        # Disable "Content check lite" switch if present to prevent long stalls
+        try:
+            content_check_label = page.get_by_text("Content check lite", exact=True)
+            if content_check_label.count() > 0:
+                switch = (
+                    content_check_label.first.locator(
+                        "xpath=ancestor::div[contains(@class, 'headline-wrapper')][1]"
+                    )
+                    .locator(".Switch__content")
+                    .first
+                )
+                if switch.get_attribute("aria-checked") == "true":
+                    switch.click(timeout=3000)
+        except Exception:
+            pass
 
     except Exception as _:
         logger.debug(red("Skipping interactivity settings (TikTok UI likely changed)"))
@@ -624,31 +675,200 @@ def _set_visibility(
         logger.error(red(f"Failed to set visibility: {e}"))
 
 
+def _fill_tiktok_schedule_inputs(page: Page, local_schedule: datetime.datetime) -> bool:
+    try:
+        date_str = local_schedule.strftime("%Y-%m-%d")
+        time_str = local_schedule.strftime("%H:%M")
+        filled = page.evaluate(
+            """
+            ([dateStr, timeStr]) => {
+                const dateInput = document.querySelector('input[type="date"], input[placeholder*="date" i]');
+                const timeInput = document.querySelector('input[type="time"], input[placeholder*="time" i]');
+                if (!dateInput || !timeInput) return false;
+
+                const setVal = (el, val) => {
+                    const proto = Object.getPrototypeOf(el);
+                    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set ||
+                                   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+                    if (setter) {
+                        setter.call(el, val);
+                    } else {
+                        el.value = val;
+                    }
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                };
+
+                setVal(dateInput, dateStr);
+                setVal(timeInput, timeStr);
+                return true;
+            }
+            """,
+            [date_str, time_str],
+        )
+        if filled:
+            time.sleep(0.3)
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def _set_tiktok_studio_custom_picker(page: Page, local_schedule: datetime.datetime) -> bool:
+    try:
+        month_names = [
+            "january", "february", "march", "april", "may", "june",
+            "july", "august", "september", "october", "november", "december"
+        ]
+        target_year = local_schedule.year
+        target_month = local_schedule.month
+        target_day = local_schedule.day
+
+        # 1. Date selection
+        date_trigger = page.locator(
+            '.DatePicker__trigger, '
+            'div[role="combobox"][aria-label*="date" i], '
+            '.schedule-picker [aria-label*="date" i]'
+        ).first
+        if date_trigger.is_visible(timeout=2500):
+            date_trigger.click(force=True, timeout=3000)
+            time.sleep(0.3)
+
+            curr_year = None
+            year_el = page.locator(".DatePicker__titleYear").first
+            if year_el.is_visible(timeout=500):
+                try:
+                    curr_year = int(year_el.inner_text().strip())
+                except Exception:
+                    pass
+
+            title_month_el = page.locator(".DatePicker__titleMonth").first
+            if title_month_el.is_visible(timeout=1500):
+                curr_month_str = title_month_el.inner_text().strip().lower()
+                if curr_month_str in month_names:
+                    curr_month = month_names.index(curr_month_str) + 1
+                    diff = target_month - curr_month
+                    if curr_year is not None:
+                        diff += (target_year - curr_year) * 12
+
+                    if diff > 0:
+                        next_btn = page.locator(
+                            'button[aria-label="Next month"], '
+                            '.DatePicker__nav:has([data-icon="ArrowRight"])'
+                        ).first
+                        for _ in range(min(diff, 12)):
+                            next_btn.click(force=True, timeout=2000)
+                            time.sleep(0.15)
+                    elif diff < 0:
+                        prev_btn = page.locator(
+                            'button[aria-label="Previous month"], '
+                            '.DatePicker__nav:has([data-icon="ArrowLeft"])'
+                        ).first
+                        for _ in range(min(abs(diff), 12)):
+                            prev_btn.click(force=True, timeout=2000)
+                            time.sleep(0.15)
+
+            day_btn = page.locator(
+                'button.DatePicker__day:not([disabled]):not([data-outside="true"])'
+            ).filter(has_text=f"{target_day}").first
+            day_btn.click(force=True, timeout=3000)
+            time.sleep(0.3)
+
+        # 2. Time selection
+        time_trigger = page.locator(
+            'div[role="combobox"][aria-label*="time" i], '
+            '.schedule-picker [aria-label*="time" i]'
+        ).first
+        if time_trigger.is_visible(timeout=2500):
+            time_trigger.click(force=True, timeout=3000)
+            time.sleep(0.3)
+
+            target_hour = local_schedule.hour
+            target_min = int(round(local_schedule.minute / 5.0) * 5) % 60
+
+            hour_btn = page.locator(
+                f'button[role="option"][aria-label="Hours {target_hour:02d}"]'
+            ).first
+            if hour_btn.is_visible(timeout=2000):
+                hour_btn.scroll_into_view_if_needed()
+                hour_btn.click(force=True, timeout=2000)
+
+            min_btn = page.locator(
+                f'button[role="option"][aria-label="Minutes {target_min:02d}"]'
+            ).first
+            if min_btn.is_visible(timeout=2000):
+                min_btn.scroll_into_view_if_needed()
+                min_btn.click(force=True, timeout=2000)
+
+            time_trigger.click(force=True, timeout=2000)
+            time.sleep(0.3)
+
+        return True
+    except Exception:
+        return False
+
+
 def _set_schedule_video(page: Page, schedule: datetime.datetime) -> None:
     """
     Sets the schedule of the video
     """
     logger.debug(green("Setting schedule"))
+    _dismiss_walkthrough_overlays(page)
 
     timezone_str = page.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
     driver_timezone = pytz.timezone(timezone_str)
 
     schedule = schedule.astimezone(driver_timezone)
 
+    # 1. Enable schedule toggle / radio in TikTok Studio
+    try:
+        schedule_inputs = page.locator(
+            '[data-e2e="schedule_container"] input[name="postSchedule"][value="schedule"]'
+        )
+        if schedule_inputs.count() > 0:
+            schedule_input = schedule_inputs.first
+            try:
+                schedule_enabled = schedule_input.is_checked()
+            except Exception:
+                schedule_enabled = schedule_input.get_attribute("aria-checked") == "true"
+            if not schedule_enabled:
+                schedule_input.locator("xpath=ancestor::label[1]").click(force=True, timeout=5000)
+
+            allow_button = page.get_by_role("button", name="Allow", exact=True).first
+            if allow_button.is_visible(timeout=1500):
+                allow_button.click(force=True, timeout=3000)
+                time.sleep(0.5)
+        else:
+            switch = page.locator(f"xpath={config.selectors.schedule.switch}").first
+            if switch.is_visible(timeout=2000):
+                switch.click(force=True)
+                time.sleep(0.5)
+    except Exception as exc:
+        logger.debug(f"Could not prepare schedule switch: {exc}")
+
+    # 2. Try native inputs
+    if _fill_tiktok_schedule_inputs(page, schedule):
+        logger.debug(green("Schedule set via native inputs"))
+        return
+
+    # 3. Try modern Studio custom pickers
+    if _set_tiktok_studio_custom_picker(page, schedule):
+        logger.debug(green("Schedule set via modern Studio custom pickers"))
+        return
+
+    # 4. Fallback to legacy calendar
     month = schedule.month
     day = schedule.day
     hour = schedule.hour
     minute = schedule.minute
 
     try:
-        switch = page.locator(f"xpath={config.selectors.schedule.switch}")
-        switch.click()
         __date_picker(page, month, day)
         __time_picker(page, hour, minute)
     except Exception as e:
         msg = f"Failed to set schedule: {e}"
         logger.error(red(msg))
-        raise FailedToUpload()
+        raise FailedToUpload(msg)
 
 
 def __date_picker(page: Page, month: int, day: int) -> None:
@@ -766,70 +986,83 @@ def _post_video(page: Page) -> None:
     """
     logger.debug(green("Clicking the post button"))
 
-    # Ensure any remaining walkthrough overlays are dismissed
-    try:
-        page.evaluate('''
-            document.querySelectorAll('button').forEach(b => {
-                if(b.innerText && b.innerText.includes('Got it')) b.click();
-            });
-        ''')
-        time.sleep(1)
-    except:
-        pass
+    # Early check: If already redirected to content manager, post already succeeded
+    page_url = str(getattr(page, "url", "") or "")
+    if "/tiktokstudio/content" in page_url or "/creator-center/content" in page_url:
+        logger.debug(green(f"Upload already confirmed via URL redirect: {page_url}"))
+        return
 
-    post_btn = page.locator(f"xpath={config.selectors.upload.post}")
+    _dismiss_walkthrough_overlays(page)
+
+    post_btn = page.locator(f"xpath={config.selectors.upload.post}").first
     try:
+        def is_enabled():
+            try:
+                if post_btn.get_attribute("data-disabled") == "false":
+                    return True
+                return post_btn.is_enabled()
+            except Exception:
+                return False
+
         for _ in range(int(config.uploading_wait / 2)):
-            if post_btn.is_enabled():
+            if is_enabled():
                 break
             time.sleep(2)
 
+        _dismiss_walkthrough_overlays(page)
         post_btn.scroll_into_view_if_needed()
-        post_btn.click()
+        try:
+            post_btn.click(timeout=5000)
+        except Exception:
+            post_btn.click(force=True, timeout=5000)
 
     except Exception:
         logger.debug(green("Trying to click on the button again (fallback)"))
-        page.evaluate('document.querySelector(".TUXButton--primary").click()')
+        try:
+            page.evaluate('document.querySelector(".TUXButton--primary").click()')
+        except Exception:
+            pass
 
-    time.sleep(3)
+    time.sleep(2)
 
     # Handle "Content may be restricted" warning modal
     try:
-        if page.locator("text=Content may be restricted").is_visible(timeout=3000) or page.locator("text=restricted").is_visible(timeout=1000):
+        if page.locator("text=Content may be restricted").is_visible(timeout=2000) or page.locator("text=restricted").is_visible(timeout=1000):
             logger.debug(green("Warning modal detected, closing it to bypass..."))
-            # Press Escape to close modal
             page.keyboard.press("Escape")
             time.sleep(1)
             
-            # Fallback close button click
             page.evaluate('''
                 document.querySelectorAll('div[role="dialog"] button').forEach(b => {
                     if(!b.innerText || b.innerText.trim() === '') b.click(); 
                 });
             ''')
-            time.sleep(2)
+            time.sleep(1.5)
             
-            # Click POST again (second click required by TikTok)
             logger.debug(green("Clicking Post button again after closing warning..."))
-            post_btn.click()
-            time.sleep(3)
+            try:
+                post_btn.click(force=True, timeout=5000)
+            except Exception:
+                pass
+            time.sleep(2)
     except Exception:
         pass
 
     try:
-        post_now = page.locator(f"xpath={config.selectors.upload.post_now}")
-        if post_now.is_visible(timeout=5000):
-            post_now.click()
+        post_now = page.locator(f"xpath={config.selectors.upload.post_now}").first
+        if post_now.is_visible(timeout=3000):
+            post_now.click(force=True)
     except Exception:
         pass
 
     # Wait for the successful post redirection or confirmation
     try:
-        post_confirmation = page.locator(f"xpath={config.selectors.upload.post_confirmation}")
+        post_confirmation = page.locator(f"xpath={config.selectors.upload.post_confirmation}").first
         post_confirmation.wait_for(state="attached", timeout=config.explicit_wait * 1000)
     except Exception:
         # Fallback check: if we are redirected to /tiktokstudio/content, upload was successful
-        if "content" in page.url or "tiktokstudio/content" in page.url:
+        cur_url = str(getattr(page, "url", "") or "")
+        if "/tiktokstudio/content" in cur_url or "/creator-center/content" in cur_url:
             logger.debug(green("Redirected to content page, assuming success."))
         else:
             raise
