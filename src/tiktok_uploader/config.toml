@@ -65,15 +65,15 @@ user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 
 
 	[selectors.schedule]
-	switch = "//*[@data-e2e='schedule_container']//label[normalize-space(.)='Schedule'] | //span[text()='Schedule']"
+	switch = "//*[@data-e2e='schedule_container']//label[contains(., 'Schedule')] | //label[contains(., 'Schedule')] | //span[contains(., 'Schedule')]"
 
-	date_picker = "//input[@type='date' or contains(@value, '-') or contains(@placeholder, 'date') or contains(@placeholder, 'Date') or contains(@class, 'TUXTextInputCore-input')]"
+	date_picker = "//input[@type='date' or contains(@value, '-') or contains(@placeholder, 'date') or contains(@placeholder, 'Date')]"
 	calendar = "//div[contains(@class, 'calendar-wrapper')]"
 	calendar_month = "//span[contains(@class, 'month-title')]"
 	calendar_valid_days = "//div[contains(@class, 'days-wrapper')]//span[contains(@class, 'day') and contains(@class, 'valid')]"
 	calendar_arrows = "//span[contains(@class, 'arrow')]"  # first last, second next
 
-	time_picker = "//input[@type='time' or contains(@value, ':') or contains(@placeholder, 'time') or contains(@placeholder, 'Time') or contains(@class, 'TUXTextInputCore-input')]"
+	time_picker = "//input[@type='time' or contains(@value, ':') or contains(@placeholder, 'time') or contains(@placeholder, 'Time')]"
 	time_picker_text = "//div[contains(@class, 'time-picker-input')]/*[1]"
 	time_picker_container = "//div[@class='tiktok-timepicker-time-picker-container']"
 	timepicker_hours = "//span[contains(@class, 'tiktok-timepicker-left')]"

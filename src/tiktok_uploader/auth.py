@@ -91,19 +91,22 @@ class AuthBackend:
         playwright_cookies = []
         for cookie in self.cookies:
             c = cookie.copy()
-            if "expiry" in c:
+            if "expiry" in c and "expires" not in c:
                 c["expires"] = c.pop("expiry")
-            # Playwright requires strict types for sameSite
+            if "expires" in c:
+                try:
+                    c["expires"] = int(float(c["expires"]))
+                except (ValueError, TypeError):
+                    c.pop("expires", None)
+
+            # Playwright requires strict types for sameSite (Strict, Lax, None)
             if "sameSite" in c:
-                if c["sameSite"] not in ["Strict", "Lax", "None"]:
-                    c.pop("sameSite")
+                val = str(c["sameSite"]).capitalize()
+                if val in ["Strict", "Lax", "None"]:
+                    c["sameSite"] = val
+                else:
+                    c.pop("sameSite", None)
 
-            # Playwright might fail if domain starts with a dot
-            # if c.get("domain", "").startswith("."):
-            #     c["domain"] = c["domain"][1:]
-
-            # logger.debug(f"Adding cookie: {c}")
-            # print(f"DEBUG: Adding cookie: {c}")
             playwright_cookies.append(c)
 
         try:

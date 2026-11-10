@@ -75,6 +75,7 @@ def get_browser(
     """)
 
     page = context.new_page()
+    page._playwright = p
     page.set_default_timeout(config.implicit_wait * 1000)  # Convert seconds to ms
 
     return page
